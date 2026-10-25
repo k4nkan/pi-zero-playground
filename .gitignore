@@ -1,0 +1,14 @@
+.env
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+
+# モデルと撮影データは配布しない
+*.task
+photos/
+captures/
+*.jpg
+*.jpeg
+*.png
