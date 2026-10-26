@@ -12,3 +12,8 @@ captures/
 *.jpg
 *.jpeg
 *.png
+
+# 学習データ用の録画（人が写る）
+dataset/recordings/
+*.h264
+*.mp4

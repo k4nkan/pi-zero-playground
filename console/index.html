@@ -109,9 +109,15 @@
   <section class="card">
     <h2>カメラ</h2>
     <div class="row camera-controls">
-      <button data-camera-action="start">カメラを起動</button>
+      <button data-camera-action="peace">ピースカメラ</button>
+      <button data-camera-action="preview" title="Python を使わず、カメラ映像をそのまま Pi のディスプレイに出す">映像だけ</button>
+      <button data-camera-action="record" title="学習データ用。ピースカメラと同じ映像を Pi の ~/peace-dataset/recordings/ に保存する">録画</button>
       <button data-camera-action="stop">停止</button>
       <span class="sub" id="camera-state"></span>
+    </div>
+    <div class="row" style="margin-top: 8px">
+      <button id="pull-recordings">録画を Mac に取り込む</button>
+      <span class="sub" id="recordings-state"></span>
     </div>
     <div class="photo" id="photo">
       <img id="photo-image" alt="Piで撮影した最新の写真" hidden>
@@ -239,12 +245,15 @@ async function updateStatus() {
     b.classList.toggle("active", b.dataset.led === ledMode));
   $("led-state").textContent = `trigger: ${s.led_trigger}`;
 
-  document.querySelectorAll("[data-camera-action]").forEach((button) => {
-    const active = button.dataset.cameraAction === "start"
-      ? s.peace
-      : !s.peace;
-    button.classList.toggle("active", active);
-  });
+  const cameraMode = s.peace ? "peace" : s.preview ? "preview" : s.record ? "record" : "stop";
+  document.querySelectorAll("[data-camera-action]").forEach((button) =>
+    button.classList.toggle("active", button.dataset.cameraAction === cameraMode));
+  if (!pulling) {
+    const { count, bytes } = s.recordings;
+    $("recordings-state").textContent = `Pi の録画: ${count} 本 / ${(bytes / 1024 ** 2).toFixed(0)} MB`
+      + (s.record ? "（録画中）" : "") + (pullResult ? ` · ${pullResult}` : "");
+  }
+  $("pull-recordings").disabled = s.record || pulling;
 }
 
 async function post(path, body) {
@@ -312,7 +321,7 @@ document.querySelectorAll("[data-camera-action]").forEach((button) =>
   button.addEventListener("click", async () => {
     const action = button.dataset.cameraAction;
     $("camera-state").textContent = action === "stop" ? "停止中…" : "起動中…";
-    const result = await post("/api/peace", { action });
+    const result = await post("/api/camera", { action });
     $("camera-state").textContent = result.code === 0
       ? ""
       : "失敗: " + (result.stderr || result.error);
@@ -320,6 +329,28 @@ document.querySelectorAll("[data-camera-action]").forEach((button) =>
   }));
 
 $("latest-photo").addEventListener("click", loadLatestPhoto);
+
+let pulling = false;
+let pullResult = ""; // 状態の更新で消えないように、最後の取り込み結果を覚えておく
+
+$("pull-recordings").addEventListener("click", async () => {
+  pulling = true;
+  $("pull-recordings").disabled = true;
+  $("recordings-state").textContent = "取り込み中…（大きいと数分かかります）";
+  try {
+    const res = await fetch("/api/recordings/pull", { method: "POST" });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error);
+    const mbTotal = result.files.reduce((sum, f) => sum + f.bytes, 0) / 1024 ** 2;
+    pullResult = `Mac に ${result.files.length} 本 / ${mbTotal.toFixed(0)} MB（dataset/recordings/）`;
+  } catch (e) {
+    pullResult = "取り込み失敗: " + e.message;
+  } finally {
+    pulling = false;
+    $("pull-recordings").disabled = false;
+    refresh();
+  }
+});
 
 refresh();
 setInterval(refresh, 3000);

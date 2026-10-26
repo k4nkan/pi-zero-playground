@@ -8,12 +8,14 @@ Raspberry Pi Zero 2 W で両手のピースを認識し、3秒カウントダウ
 
 | パス | 動く場所 | 中身 |
 | --- | --- | --- |
-| `raspi/pi_peace.py` | Pi | カメラ取得・手の認識・カウントダウン撮影・`/dev/fb0` への描画 |
+| `raspi/pi_peace.py` | Pi | 手の認識・カウントダウン撮影。映像は `rpicam-vid` の GPU プレビュー（画面左 800×600）、状態は右の余白に `/dev/fb0` で描く |
 | `raspi/requirements.txt` | Pi | Pi の venv（Python 3.12）に入れる依存。`mediapipe==0.10.18` 固定 |
 | `console/server.mjs` | Mac | `127.0.0.1` だけで待ち受けるローカルサーバー。ブラウザ → server → SSH → Pi |
-| `console/index.html` | Mac | 操作画面（状態・カメラ・LED・コマンド実行・電源） |
+| `console/index.html` | Mac | 操作画面（状態・カメラ・LED・コマンド実行・電源）。カメラは「ピースカメラ」（`pi_peace.py`）と「映像だけ」（`rpicam-hello -t 0 -f`、Python なし）を切り替える |
+| `dataset/` | Mac | 分類モデル用の学習データ。コンソールの「録画」で Pi に撮り、「録画を Mac に取り込む」で `dataset/recordings/`（コミットしない）に入れる。手順は [dataset/README.md](dataset/README.md) |
 
 Pi 上の配置: `~/hand-landmarker/`（`pi_peace.py`、`.venv/`、`models/hand_landmarker.task`、`photos/`）。
+録画は本番と分けて `~/peace-dataset/`（`recordings/`、`record.pid`、`record.log`）だけに書く。`rm -rf ~/peace-dataset` で元に戻る。
 
 ## デバイスの前提
 
@@ -31,12 +33,12 @@ Pi 上の配置: `~/hand-landmarker/`（`pi_peace.py`、`.venv/`、`models/hand_
 - mediapipe は `libEGL.so.1` が要る（`apt install libegl1 libgles2`）。`import` からモデル生成まで約 30 秒かかるので、先に `LOADING...` を描いている。
 - apt で libcamera だけ上がると `rpicam-*` が `undefined symbol` で起動しなくなる。libcamera を上げたら rpicam-apps も揃えて上げる。
 - コンソールの SSH コマンドで裏起動するときは `setsid nohup ... </dev/null &` を単独の文で書く。`cd x && setsid ... &` とつなぐと、残ったサブシェルが SSH の出力を握って返ってこない。停止は PID ファイルからプロセスグループごと（`kill -- -PID`）。
-- `pi_peace.py` が `/dev/fb0` に直接描くので、停止後は `systemctl restart getty@tty1` でログイン画面を戻している。
+- 映像は `rpicam-vid`（`-n` なし）の DRM プレビューが GPU で出し、同じプロセスの stdout から認識用フレームを読む。プレビューは fb0 より上の層なので、fb0 に描いた文字はプレビューの外（右の余白）にしか見えない。停止後は `systemctl restart getty@tty1` でログイン画面を戻している。
 
 ## 性能の目安（実測、詳細は docs/constraints.md）
 
-- ライブ映像 320×240 / 15fps、手の認識は両手で約 2fps（VIDEO モード 1回 約 500ms）
-- 動作中は CPU 4コア中 約2コア使用（推論 約1コア＋表示 約0.8コア）、空きメモリ 約 165MB
+- ライブ映像 640×480 / 15fps（GPU プレビュー）、推論は1回 約 500ms。手がないときは1秒に1回に間引く
+- 動作中は CPU 4コア全体の約 20%（Python 約 0.65 コア）、空きメモリ 約 170MB。表示を Python で描くと +0.8 コアかかるので戻さない
 - 認識の速さは CPU の空きでは上がらない。速くするなら認識の解像度を下げる・毎フレーム認識しない
 - 実測値を docs/constraints.md に書くときは、推測値と混ぜない
 
@@ -62,7 +64,7 @@ python3 -m py_compile raspi/pi_peace.py
 node --check console/server.mjs
 ```
 
-実機での確認は、コンソールの「ピース認識を起動」→ 約 30 秒待つ → Pi の画面を見る。画面の中身は `ssh "$PI_HOST" 'head -c 1228800 /dev/fb0'` で RGB565 の生データとして取れる。
+実機での確認は、コンソールの「ピースカメラ」→ 約 30 秒待つ → Pi の画面を見る。fb0 の中身は `ssh "$PI_HOST" 'head -c 1228800 /dev/fb0'` で RGB565 の生データとして取れる（GPU プレビューの映像は映らない）。認識の回数と時間は `/tmp/pi-panel-peace.log` に 10 秒ごとに出る。
 
 ## 規約
 

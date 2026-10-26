@@ -1,6 +1,7 @@
 """Pi Zero 2 W でピースを認識して、つないだディスプレイに映す（GUI なし）。
 
-カメラは rpicam-vid から受け取り、画面は /dev/fb0 に直接描く。
+カメラ映像の表示は rpicam-vid の DRM プレビュー（GPU）に任せ、同じ rpicam-vid の stdout から
+フレームを受け取って認識だけする。Python は画面右の余白にカウントダウンと状態を描くだけ。
 MediaPipe 1.x は Pi Zero 2 W の CPU（AES 命令なし）で落ちるので、Python 3.12 + mediapipe 0.10.18 で動かす。
 """
 
@@ -15,14 +16,15 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+CAPTURE_W, CAPTURE_H = 640, 480  # プレビューにも使うので、小さすぎるとぼやける
 WIDTH, HEIGHT = 320, 240  # 認識に使う解像度。小さいほど速い
-DISPLAY_FPS = 15  # 認識と分離し、カメラ映像は滑らかに更新する
-DISPLAY_INTERVAL = 1 / DISPLAY_FPS
+IDLE_INTERVAL = 1.0  # 手が写っていないときの推論間隔（秒）
 PHOTO_WIDTH, PHOTO_HEIGHT = 2592, 1944
 COUNTDOWN_SECONDS = 3
 MODEL = Path(__file__).parent / "models" / "hand_landmarker.task"
 PHOTO_DIR = Path(__file__).parent / "photos"
 SCREEN_W, SCREEN_H = (int(v) for v in Path("/sys/class/graphics/fb0/virtual_size").read_text().split(","))
+PREVIEW_W = SCREEN_H * CAPTURE_W // CAPTURE_H  # 左にプレビュー、右の余白に状態を描く
 ACCENT = (81, 0, 255)  # #ff0051（BGR）
 
 
@@ -49,7 +51,7 @@ def is_peace(hand):
 
 
 class Camera:
-    """rpicam-vid の YUV420 出力を別スレッドで読み続け、最新の1枚だけ持つ（認識が遅くても遅延が溜まらない）。"""
+    """rpicam-vid でプレビューを出しつつ、YUV420 の stdout を別スレッドで読み続けて最新の1枚だけ持つ。"""
 
     def __init__(self):
         self.control_lock = threading.Lock()
@@ -59,23 +61,27 @@ class Camera:
 
     def _start(self):
         self.process = subprocess.Popen(
-            ["rpicam-vid", "-t", "0", "-n", "--width", str(WIDTH), "--height", str(HEIGHT),
-             "--framerate", "15", "--codec", "yuv420", "-o", "-"],
+            ["rpicam-vid", "-t", "0", "--width", str(CAPTURE_W), "--height", str(CAPTURE_H),
+             "--framerate", "15", "--codec", "yuv420", "--hflip",  # 鏡のように左右反転
+             "-p", f"0,0,{PREVIEW_W},{SCREEN_H}", "-o", "-"],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         )
         threading.Thread(target=self._read, args=(self.process,), daemon=True).start()
 
     def _read(self, process):
-        size = WIDTH * HEIGHT * 3 // 2
+        # 変換は認識するフレームだけにしたいので、ここでは生のバイト列を持つだけ
+        size = CAPTURE_W * CAPTURE_H * 3 // 2
         while process is self.process \
                 and (data := process.stdout.read(size)) and len(data) == size:
-            yuv = np.frombuffer(data, np.uint8).reshape(HEIGHT * 3 // 2, WIDTH)
-            frame = cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR_I420)
-            cv2.flip(frame, 1, dst=frame)  # 鏡のように左右反転
-            self.latest = frame
+            self.latest = data
 
     def read(self):
-        return self.latest
+        """認識用に縮小した RGB を返す。"""
+        if self.latest is None:
+            return None
+        yuv = np.frombuffer(self.latest, np.uint8).reshape(CAPTURE_H * 3 // 2, CAPTURE_W)
+        rgb = cv2.cvtColor(yuv, cv2.COLOR_YUV2RGB_I420)
+        return cv2.resize(rgb, (WIDTH, HEIGHT), interpolation=cv2.INTER_AREA)
 
     def _stop(self):
         process = self.process
@@ -113,13 +119,13 @@ class Camera:
 
 
 class Recognition:
-    """重い手の認識を描画と別スレッドで実行し、最新結果だけを持つ。"""
+    """重い手の認識を別スレッドで実行し、最新結果だけを持つ。手がないときは間引く。"""
 
     def __init__(self, camera, landmarker, mp):
         self.camera = camera
         self.landmarker = landmarker
         self.mp = mp
-        self.latest = None
+        self.hand_count = 0
         self.countdown_started = None
         self.armed = True
         self.notice = None
@@ -129,16 +135,24 @@ class Recognition:
         self.thread.start()
 
     def _run(self):
+        runs, busy, report_at = 0, 0.0, time.monotonic() + 10
         while not self.stop_event.is_set():
+            started = time.monotonic()
             frame = self.camera.read()
             if frame is None:
                 time.sleep(0.01)
                 continue
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            image = self.mp.Image(image_format=self.mp.ImageFormat.SRGB, data=rgb)
-            self.latest = self.landmarker.detect_for_video(image, int(time.monotonic() * 1000))
-            peace_count = sum(is_peace(hand) for hand in self.latest.hand_landmarks)
+            image = self.mp.Image(image_format=self.mp.ImageFormat.SRGB, data=frame)
+            result = self.landmarker.detect_for_video(image, int(started * 1000))
+            self.hand_count = len(result.hand_landmarks)
+            peace_count = sum(is_peace(hand) for hand in result.hand_landmarks)
             now = time.monotonic()
+
+            runs += 1
+            busy += now - started
+            if now >= report_at:
+                print(f"recognition: {runs / 10:.1f}/s, {1000 * busy / max(runs, 1):.0f}ms each", flush=True)
+                runs, busy, report_at = 0, 0.0, now + 10
 
             if peace_count >= 2:
                 if not self.armed:
@@ -150,7 +164,7 @@ class Recognition:
 
                 self.armed = False
                 self.countdown_started = None
-                self.notice = "SHOOTING..."
+                self.notice = "SHOOT"
                 self.notice_until = float("inf")
                 try:
                     path = self.camera.capture_photo()
@@ -163,6 +177,9 @@ class Recognition:
             else:
                 self.countdown_started = None
                 self.armed = True
+                if self.hand_count == 0:
+                    # 誰も写っていないときは推論を間引いて CPU を空ける
+                    self.stop_event.wait(max(0, IDLE_INTERVAL - (time.monotonic() - started)))
 
     def stop(self):
         self.stop_event.set()
@@ -177,32 +194,34 @@ class Recognition:
         return None, None
 
 
-def render_screen(frame, screen, resized):
-    """画面の高さに合わせて拡大し、左右を黒で埋める。"""
-    left = (SCREEN_W - resized.shape[1]) // 2
-    screen.fill(0)
-    cv2.resize(frame, (resized.shape[1], SCREEN_H), dst=resized)
-    screen[:, left:left + resized.shape[1]] = resized
-
-
 def write(fb, screen, pixels):
     cv2.cvtColor(screen, cv2.COLOR_BGR2BGR565, dst=pixels)
     fb.seek(0)
     fb.write(pixels)  # fb0 は 16bit（RGB565）
 
 
-def put_centered_text(screen, text, scale, color, thickness):
+def put_centered_text(screen, text, center_x, scale, color, thickness):
     size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
-    position = ((SCREEN_W - size[0]) // 2, (SCREEN_H + size[1]) // 2)
+    position = (center_x - size[0] // 2, (SCREEN_H + size[1]) // 2)
     cv2.putText(screen, text, position, cv2.FONT_HERSHEY_SIMPLEX, scale, color, thickness)
+
+
+def draw_panel(screen, notice, countdown, hand_count):
+    """プレビューの右の余白だけに描く（プレビューの下は GPU の映像で隠れる）。"""
+    screen.fill(0)
+    center_x = (PREVIEW_W + SCREEN_W) // 2
+    if countdown is not None:
+        put_centered_text(screen, str(countdown), center_x, 7, (255, 255, 255), 14)
+    elif notice:
+        put_centered_text(screen, notice, center_x, 1.4, ACCENT, 4)
+    else:
+        put_centered_text(screen, f"HANDS {hand_count}", center_x, 1, (160, 160, 160), 2)
 
 
 def main():
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # 止められたら finally でカメラも閉じる
     fb = open("/dev/fb0", "r+b")
-    display_width = WIDTH * SCREEN_H // HEIGHT
     screen = np.zeros((SCREEN_H, SCREEN_W, 3), np.uint8)
-    resized = np.empty((SCREEN_H, display_width, 3), np.uint8)
     pixels = np.empty((SCREEN_H, SCREEN_W, 2), np.uint8)
 
     cv2.putText(screen, "LOADING...", (40, SCREEN_H // 2), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 4)
@@ -222,22 +241,16 @@ def main():
     ))
     camera = Camera()
     recognition = Recognition(camera, landmarker, mp)
+    shown = None
     try:
         while True:
-            started = time.monotonic()
-            frame = camera.read()
-            if frame is None:
-                time.sleep(0.01)
-                continue
-
-            render_screen(frame, screen, resized)
-            notice, countdown = recognition.status()
-            if countdown is not None:
-                put_centered_text(screen, str(countdown), 9, (255, 255, 255), 16)
-            elif notice:
-                put_centered_text(screen, notice, 2, ACCENT, 6)
-            write(fb, screen, pixels)
-            time.sleep(max(0, DISPLAY_INTERVAL - (time.monotonic() - started)))
+            # 映像は GPU が描くので、ここは右の余白の表示が変わったときだけ書き直す
+            state = (*recognition.status(), recognition.hand_count)
+            if state != shown:
+                draw_panel(screen, *state)
+                write(fb, screen, pixels)
+                shown = state
+            time.sleep(0.1)
     finally:
         recognition.stop()
         camera.stop()
