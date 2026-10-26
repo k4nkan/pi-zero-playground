@@ -17,3 +17,7 @@ captures/
 dataset/recordings/
 *.h264
 *.mp4
+
+# 3D プリントの生成物
+case/*.stl
+case/*.3mf
