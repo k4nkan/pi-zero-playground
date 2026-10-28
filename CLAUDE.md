@@ -23,7 +23,10 @@ Pi 上の配置: `~/hand-landmarker/`（`pi_peace.py`、`.venv/`、`models/hand_
 - OS: Raspberry Pi OS Lite **64bit**（Debian 13 trixie）。デスクトップなし、`multi-user.target`
 - 画面: HDMI のコンソール。`/dev/fb0` は 1024×600 / 16bit（RGB565）。`kanta` は video グループなので sudo なしで書ける
 - カメラ: OV5647（640×480 62fps 〜 2592×1944 15fps）
-- 接続先は `console/.env` の `PI_HOST`（作者の環境は `kanta@kanta.local`）。SSH は鍵認証、Pi の sudo はパスワードなし
+- 接続先は `console/.env` の `PI_HOST`（作者の環境は `kanta@kanta.local`）。SSH は鍵認証だけ（パスワード SSH は `/etc/ssh/sshd_config.d/10-key-only.conf` で禁止）
+- Pi の sudo はパスワード必須（`/etc/sudoers.d/99-kanta-require-password`）。コンソールが `sudo -n` で使う LED・再起動・電源オフ・`getty@tty1` の再起動・画面クリアだけはパスワードなし。ここに無い sudo をコンソールに足すときは、この許可リストも更新する
+- Claude は `sudo -n` 以外の sudo を実行できない。必要なときはユーザーに `ssh -t "$PI_HOST" 'sudo ...'` を自分のターミナルで実行してもらう
+- メンバーの SSH の入れ方は [docs/ssh-access.md](docs/ssh-access.md)
 
 ## ハマりどころ（変えるときは必ず踏まえる）
 

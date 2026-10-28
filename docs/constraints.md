@@ -43,7 +43,8 @@ Pi Peace Camera を作るうえでの前提と制約。数値は **実測** と 
 | システムの Python | 3.13（picamera2 などの apt パッケージはこれ用） |
 | カメラのツール | rpicam-apps 1.14.0 / libcamera 0.7.2 |
 | 追加した apt パッケージ | `python3-picamera2`、`libegl1`、`libgles2` |
-| ユーザー | `kanta`。video グループ（fb0 に書ける）、sudo はパスワードなし |
+| ユーザー | `kanta`。video グループ（fb0 に書ける）。sudo はパスワード必須（コンソールが使うコマンドだけ例外、`/etc/sudoers.d/99-kanta-require-password`） |
+| 追加した設定 | Wi-Fi の省電力オフ（`/etc/NetworkManager/conf.d/wifi-powersave-off.conf`）、ログを再起動後も残す（`/etc/systemd/journald.conf.d/50-persistent.conf`、上限 50MB）、SSH は鍵認証だけ（`/etc/ssh/sshd_config.d/10-key-only.conf`） |
 
 - apt で libcamera だけが上がると、rpicam-apps と合わなくなって `rpicam-*` が起動しなくなる。上げるときは両方そろえる。
 - `/tmp` は再起動で消える。PID ファイルとログはここに置いている。
@@ -123,7 +124,11 @@ Pi Peace Camera を作るうえでの前提と制約。数値は **実測** と 
 ## ネットワークと運用
 
 - Mac と Pi が同じ LAN にいる前提。Mac が学内 Wi-Fi など別のネットワークにいると届かない。
-- 接続は SSH の鍵認証（`console/.env` の `PI_HOST`）。`kanta.local`（mDNS）が引けない環境では IP で指定する。IP は Pi の画面のログイン表示に出る。
+- 接続は SSH の鍵認証だけ（`console/.env` の `PI_HOST`）。`kanta.local`（mDNS）が引けない環境では IP で指定する。メンバーの入れ方は [ssh-access.md](ssh-access.md)。
+- Wi-Fi は 2.4GHz だけ。**802.11r（FT / 高速ローミング）が有効な AP にはつながらない**: AP が FT 用の PMKID を 4-way handshake の 3/4 に付けてきて、wpa_supplicant が `IE in 3/4 msg does not match`（reason 17）で切る。ドライバー（brcmfmac）が FT に対応していないので Pi 側の設定では直らず、AP 側で 802.11r を無効にする。
+- `nmcli connection up` で認証に失敗すると、NetworkManager が保存済みのパスワードを使わなくなることがある（次の試行が `Secrets were required` で即失敗する）。そのときは `nmtui` でパスワードを入れ直す。
+- ネットワークを切り替えるときは、SSH が切れても戻れるよう `systemd-run` で「つなぐ → 結果を記録 → 一定時間後に元の接続へ戻す」を裏で動かしてから実行する。
+- Wi-Fi の MAC アドレスは Raspberry Pi の新しい OUI（`88:a2:9e`）。ARP で探すときは `b8:27:eb` などの古い OUI だけで探さない。
 - コンソール（`console/server.mjs`）は `127.0.0.1:8765` だけで待ち受ける。任意コマンド実行機能があるので外に公開しない。
 - コードは Mac で編集して `rsync` で送る。Pi 上で直接編集しない。
 
