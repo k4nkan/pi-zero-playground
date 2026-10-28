@@ -26,6 +26,12 @@ openscad -D 'part="left"'  -o case/monitor_stand_left.stl  case/monitor_stand.sc
 openscad -D 'part="right"' -o case/monitor_stand_right.stl case/monitor_stand.scad
 ```
 
+左右を並べた 1 つの STL（約 71 × 37 × 29mm）にまとめると、スライサーへの読み込みが 1 回で済む。
+
+```sh
+openscad -D 'part="both"' -o case/monitor_stand_both.stl case/monitor_stand.scad
+```
+
 STL は生成物なのでコミットしない（`.gitignore` 済み）。
 
 ## 印刷のメモ
