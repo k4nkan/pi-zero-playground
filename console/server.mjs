@@ -11,13 +11,17 @@ import { fileURLToPath } from "node:url";
 const PI_HOST = process.env.PI_HOST ?? "pi@raspberrypi.local";
 const PORT = Number(process.env.PORT ?? 8765);
 
-// 毎回 SSH の接続確立をすると遅いので、1本の接続を使い回す
+// 毎回 SSH の接続確立をすると遅いので、1本の接続を使い回す。
+// Windows の OpenSSH は接続の使い回し（ControlMaster）に対応しておらず
+// `getsockname failed: Not a socket` で落ちるので、Windows では毎回つなぐ
 const SSH_OPTS = [
   "-o", "BatchMode=yes",
   "-o", "ConnectTimeout=5",
-  "-o", "ControlMaster=auto",
-  "-o", "ControlPath=~/.ssh/cm-%r@%h:%p",
-  "-o", "ControlPersist=120",
+  ...(process.platform === "win32" ? [] : [
+    "-o", "ControlMaster=auto",
+    "-o", "ControlPath=~/.ssh/cm-%r@%h:%p",
+    "-o", "ControlPersist=120",
+  ]),
 ];
 
 const STATUS_SCRIPT = String.raw`
@@ -74,6 +78,26 @@ sudo -n systemctl restart getty@tty1; }; rm -f ${RECORD_PID}`;
 
 const CLEAR_CONSOLE = "sudo -n sh -c 'export TERM=linux; setterm --cursor off > /dev/tty1; clear > /dev/tty1'";
 
+const PREVIEW_OPTION_RANGES = {
+  ev: [-10, 10],
+  brightness: [-1, 1],
+  contrast: [0, 32],
+  saturation: [0, 32],
+  sharpness: [0, 16],
+};
+
+function previewOptions(values = {}) {
+  if (!values || typeof values !== "object" || Array.isArray(values)) return null;
+  const options = [];
+  for (const [name, [min, max]] of Object.entries(PREVIEW_OPTION_RANGES)) {
+    if (values[name] == null) continue;
+    const value = Number(values[name]);
+    if (!Number.isFinite(value) || value < min || value > max) return null;
+    options.push(`--${name} ${value}`);
+  }
+  return options.join(" ");
+}
+
 const CAMERA_COMMANDS = {
   // raspi/pi_peace.py を Pi の ~/hand-landmarker に置いてある前提
   peace: `${running(PEACE_PID)} && { echo already running; exit 0; }
@@ -85,11 +109,11 @@ cd ~/hand-landmarker || exit 1
 setsid nohup .venv/bin/python -u pi_peace.py >/tmp/pi-panel-peace.log 2>&1 </dev/null & echo $! > ${PEACE_PID}
 sleep 3; ${running(PEACE_PID)} && echo "started（読み込みに 30 秒ほどかかります）" || { tail -5 /tmp/pi-panel-peace.log >&2; exit 1; }`,
   // Python を使わず、rpicam-hello のプレビューでカメラ映像をそのまま全画面に出す
-  preview: `${running(PREVIEW_PID)} && { echo already running; exit 0; }
+  preview: (options) => `${STOP_PREVIEW}
 ${STOP_PEACE}
 ${STOP_RECORD}
 ${CLEAR_CONSOLE}
-setsid nohup rpicam-hello -t 0 -f >/tmp/pi-panel-preview.log 2>&1 </dev/null & echo $! > ${PREVIEW_PID}
+setsid nohup rpicam-hello -t 0 -f ${options} >/tmp/pi-panel-preview.log 2>&1 </dev/null & echo $! > ${PREVIEW_PID}
 sleep 2; ${running(PREVIEW_PID)} && echo started || { tail -3 /tmp/pi-panel-preview.log >&2; exit 1; }`,
   // pi_peace.py が認識に使うのと同じ映像（640×480 / 15fps / 左右反転、プレビューも同じ位置）を H.264 で保存する
   record: `${running(RECORD_PID)} && { echo already recording; exit 0; }
@@ -243,7 +267,14 @@ const server = createServer(async (req, res) => {
   let command;
   if (req.url === "/api/led") command = LED_COMMANDS[body.mode];
   else if (req.url === "/api/power") command = POWER_COMMANDS[body.action];
-  else if (req.url === "/api/camera") command = CAMERA_COMMANDS[body.action];
+  else if (req.url === "/api/camera") {
+    command = CAMERA_COMMANDS[body.action];
+    if (body.action === "preview") {
+      const options = previewOptions(body.options);
+      if (options == null) return sendJson(res, { error: "カメラ設定の値が範囲外です" }, 400);
+      command = command?.(options);
+    }
+  }
   else if (req.url === "/api/exec") command = String(body.command ?? "").trim();
   else return sendJson(res, { error: "not found" }, 404);
   if (!command) return sendJson(res, { error: "bad request" }, 400);

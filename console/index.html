@@ -59,6 +59,15 @@
   .chips { margin-top: 8px; }
   .chips button { padding: 3px 10px; font-size: 12px; }
   .camera-controls button { min-width: 150px; padding: 10px 16px; }
+  .preview-options {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 16px;
+    margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line);
+  }
+  .preview-option { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; align-items: center; }
+  .preview-option label { font-size: 12px; color: var(--muted); }
+  .preview-option output { font: 12px ui-monospace, Menlo, monospace; }
+  .preview-option input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+  .preview-option-actions { grid-column: 1 / -1; }
   .photo {
     position: relative; margin-top: 14px; aspect-ratio: 4 / 3; background: var(--code);
     border: 1px solid var(--line); border-radius: 8px; display: grid; place-items: center;
@@ -114,6 +123,33 @@
       <button data-camera-action="record" title="学習データ用。ピースカメラと同じ映像を Pi の ~/peace-dataset/recordings/ に保存する">録画</button>
       <button data-camera-action="stop">停止</button>
       <span class="sub" id="camera-state"></span>
+    </div>
+    <div class="preview-options">
+      <div class="preview-option">
+        <label for="preview-ev">露出補正</label><output for="preview-ev">0</output>
+        <input id="preview-ev" data-preview-option="ev" type="range" min="-10" max="10" step="0.5" value="0">
+      </div>
+      <div class="preview-option">
+        <label for="preview-brightness">明るさ</label><output for="preview-brightness">0</output>
+        <input id="preview-brightness" data-preview-option="brightness" type="range" min="-1" max="1" step="0.1" value="0">
+      </div>
+      <div class="preview-option">
+        <label for="preview-contrast">コントラスト</label><output for="preview-contrast">1</output>
+        <input id="preview-contrast" data-preview-option="contrast" type="range" min="0" max="32" step="0.5" value="1">
+      </div>
+      <div class="preview-option">
+        <label for="preview-saturation">彩度</label><output for="preview-saturation">1</output>
+        <input id="preview-saturation" data-preview-option="saturation" type="range" min="0" max="32" step="0.5" value="1">
+      </div>
+      <div class="preview-option">
+        <label for="preview-sharpness">シャープネス</label><output for="preview-sharpness">1</output>
+        <input id="preview-sharpness" data-preview-option="sharpness" type="range" min="0" max="16" step="0.5" value="1">
+      </div>
+      <div class="row preview-option-actions">
+        <button id="apply-preview-options">映像だけに適用</button>
+        <button id="reset-preview-options">標準に戻す</button>
+        <span class="sub">適用すると「映像だけ」を再起動します</span>
+      </div>
     </div>
     <div class="row" style="margin-top: 8px">
       <button id="pull-recordings">録画を Mac に取り込む</button>
@@ -321,12 +357,44 @@ document.querySelectorAll("[data-camera-action]").forEach((button) =>
   button.addEventListener("click", async () => {
     const action = button.dataset.cameraAction;
     $("camera-state").textContent = action === "stop" ? "停止中…" : "起動中…";
-    const result = await post("/api/camera", { action });
+    const result = await post("/api/camera", {
+      action,
+      ...(action === "preview" ? { options: previewOptions() } : {}),
+    });
     $("camera-state").textContent = result.code === 0
       ? ""
       : "失敗: " + (result.stderr || result.error);
     refresh();
   }));
+
+const previewDefaults = { ev: 0, brightness: 0, contrast: 1, saturation: 1, sharpness: 1 };
+
+function previewOptions() {
+  return Object.fromEntries(
+    [...document.querySelectorAll("[data-preview-option]")]
+      .map((input) => [input.dataset.previewOption, Number(input.value)]),
+  );
+}
+
+document.querySelectorAll("[data-preview-option]").forEach((input) => {
+  const output = document.querySelector(`output[for="${input.id}"]`);
+  input.addEventListener("input", () => { output.value = input.value; });
+});
+
+$("apply-preview-options").addEventListener("click", async () => {
+  $("camera-state").textContent = "設定を適用中…";
+  const result = await post("/api/camera", { action: "preview", options: previewOptions() });
+  $("camera-state").textContent = result.code === 0 ? "" : "失敗: " + (result.stderr || result.error);
+  refresh();
+});
+
+$("reset-preview-options").addEventListener("click", () => {
+  for (const [name, value] of Object.entries(previewDefaults)) {
+    const input = document.querySelector(`[data-preview-option="${name}"]`);
+    input.value = value;
+    input.dispatchEvent(new Event("input"));
+  }
+});
 
 $("latest-photo").addEventListener("click", loadLatestPhoto);
 
