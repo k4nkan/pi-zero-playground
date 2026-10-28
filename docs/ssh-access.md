@@ -110,6 +110,12 @@ Host peace-cam
   User kanta
 ```
 
+### コンソール（`console/`）を自分の PC で使うとき
+
+- コンソールはパスフレーズを聞かずに SSH する（`BatchMode=yes`）。パスフレーズ付きの鍵は、上の手順で ssh-agent / キーチェーンに登録しておかないと「オフライン」になる
+- `console/.env` の `PI_HOST` は `kanta@kanta.local`
+- Windows では「録画を Mac に取り込む」は使えない（`rsync` が入っていないため）
+
 ## 抜けるとき（管理者）
 
 その人の名前が付いた行を消す。
