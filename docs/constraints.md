@@ -106,6 +106,19 @@ Pi Peace Camera を作るうえでの前提と制約。数値は **実測** と 
 | メモリ（available） | 約 167MB（Python 109MB）、swap 88MB |
 | 温度 | 62〜63℃ |
 
+### Tailscale（2026-10-29）
+
+`tailscale` 1.104.4。何も動かしていない（コンソールだけつながっている）ときに測った。「見守り」と同時の値は未計測。
+
+| 項目 | 値 |
+| --- | --- |
+| `tailscaled` の RSS | 約 38MB（導入直後）、約 42MB（Tailscale SSH を有効にした後） |
+| `tailscaled` の CPU | 起動から 6 分の平均で 1 コアの 1.4%（起動時の処理を含む） |
+| Tailscale SSH の接続 1 本 | 補助プロセス（`tailscaled be-child`）が 1〜2 個増え、それぞれ RSS 約 24MB。`tailscaled` 本体と共有している分を含むので、実際の増え方はこれより小さい（root でないと測れず未計測） |
+| メモリ（available） | 271MB（導入前）→ 264MB（導入後）→ 約 230MB（Tailscale SSH の接続が 1〜2 本） |
+
+available はキャッシュの増減も混ざるので、差は目安。Tailscale SSH はコンソールのように接続を使い回すとその間ずっとメモリを使うので、研究室では `kanta.local`（普通の sshd）を使う。
+
 ### 速さ（実測）
 
 | 処理 | 値 |
@@ -123,8 +136,9 @@ Pi Peace Camera を作るうえでの前提と制約。数値は **実測** と 
 
 ## ネットワークと運用
 
-- Mac と Pi が同じ LAN にいる前提。Mac が学内 Wi-Fi など別のネットワークにいると届かない。
-- 接続は SSH の鍵認証だけ（`console/.env` の `PI_HOST`）。`kanta.local`（mDNS）が引けない環境では IP で指定する。メンバーの入れ方は [ssh-access.md](ssh-access.md)。
+- 研究室の LAN からは `kanta.local`（mDNS）に SSH の鍵認証で入る（`console/.env` の `PI_HOST`）。`kanta.local` が引けない環境では IP で指定する。
+- 外からは Tailscale で入る。Tailscale 経由の SSH は Tailscale SSH が受け持ち、鍵ではなく Tailscale のアカウントで認証する。メンバーは Pi を共有してもらい、`kanta.<tailnet>.ts.net` でつなぐ。学内 Wi-Fi など直接つながらないネットワークでは中継（DERP、東京）を通るので、録画の取り込みなど大きい転送は研究室の LAN でやる。手順は [ssh-access.md](ssh-access.md)。
+- tailnet の名前・メンバーの Tailscale の ID はリポジトリに書かない（公開リポジトリのため）。
 - Wi-Fi は 2.4GHz だけ。**802.11r（FT / 高速ローミング）が有効な AP にはつながらない**: AP が FT 用の PMKID を 4-way handshake の 3/4 に付けてきて、wpa_supplicant が `IE in 3/4 msg does not match`（reason 17）で切る。ドライバー（brcmfmac）が FT に対応していないので Pi 側の設定では直らず、AP 側で 802.11r を無効にする。
 - `nmcli connection up` で認証に失敗すると、NetworkManager が保存済みのパスワードを使わなくなることがある（次の試行が `Secrets were required` で即失敗する）。そのときは `nmtui` でパスワードを入れ直す。
 - ネットワークを切り替えるときは、SSH が切れても戻れるよう `systemd-run` で「つなぐ → 結果を記録 → 一定時間後に元の接続へ戻す」を裏で動かしてから実行する。
