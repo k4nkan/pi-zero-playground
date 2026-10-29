@@ -62,7 +62,8 @@ class Camera:
     def _start(self):
         self.process = subprocess.Popen(
             ["rpicam-vid", "-t", "0", "--width", str(CAPTURE_W), "--height", str(CAPTURE_H),
-             "--framerate", "15", "--codec", "yuv420", "--hflip",  # 鏡のように左右反転
+             "--framerate", "15", "--codec", "yuv420",
+             "--hflip", "--vflip",  # 鏡のように左右反転、カメラの向きに合わせて上下反転
              "-p", f"0,0,{PREVIEW_W},{SCREEN_H}", "-o", "-"],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         )
@@ -102,7 +103,7 @@ class Camera:
             self._stop()
             try:
                 result = subprocess.run(
-                    ["rpicam-still", "-n", "-t", "500", "--zsl", "--no-raw",
+                    ["rpicam-still", "-n", "-t", "500", "--zsl", "--no-raw", "--vflip",
                      "--width", str(PHOTO_WIDTH), "--height", str(PHOTO_HEIGHT),
                      "-o", str(path)],
                     capture_output=True, text=True, timeout=15,
