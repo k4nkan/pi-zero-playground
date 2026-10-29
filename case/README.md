@@ -4,7 +4,7 @@
 
 ## モニタースタンド
 
-前の足と後ろの低い三角（高さ 10mm）のあいだの溝（`slot_w` = 4mm）にモニターの下の縁を差し込む。横幅 30mm（`width`）。溝は `tilt`（初期値 10°）だけ後ろに傾いている。
+前の足と後ろの低い三角（高さ 10mm）のあいだの溝（`slot_w` = 5.1mm）にモニターの下の縁を差し込む。横幅 30mm（`width`）。溝は `tilt`（初期値 10°）だけ後ろに傾いている。
 
 前の足は、座ったクマのぬいぐるみが前に投げ出した足の形。一辺 30mm（`foot_size`）の角を丸めた正方形（角の丸み `foot_corner` = 9mm）の断面を前に伸ばした棒で、正面に角丸の四角い足の裏がある（縁は `fillet` で丸める）。足の裏の溝（肉球の輪郭のような線）は、細い溝が印刷で潰れやすいので今は彫っていない（`pad = true` で彫れる）。足の長さは溝から 12mm（`foot_len`）。
 
@@ -21,16 +21,13 @@
 
 ## STL を書き出す
 
-```sh
-openscad -D 'part="left"'  -o case/monitor_stand_left.stl  case/monitor_stand.scad
-openscad -D 'part="right"' -o case/monitor_stand_right.stl case/monitor_stand.scad
-```
-
-左右を並べた 1 つの STL（約 71 × 37 × 29mm）にまとめると、スライサーへの読み込みが 1 回で済む。
+左右を並べた 1 つの STL（約 71 × 37 × 29mm）に書き出す。スライサーへの読み込みが 1 回で済む。
 
 ```sh
 openscad -D 'part="both"' -o case/monitor_stand_both.stl case/monitor_stand.scad
 ```
+
+片方だけ刷り直すときは `part="left"` / `"right"` で書き出す。
 
 STL は生成物なのでコミットしない（`.gitignore` 済み）。
 

@@ -14,7 +14,7 @@ part = "both";    // "left"（モニターの左に置く）/ "right" / "both"�
 
 $fn = 64;
 width = 30;       // 横幅（モニターの縁に沿う方向）
-slot_w = 4;       // 溝の幅（モニターの厚さ）
+slot_w = 5.1;     // 溝の幅（傾きに垂直な向き）。モニターの厚さ + すき間
 tilt = 10;        // モニターを後ろに傾ける角度（度）。0 で垂直
 base_t = 4;       // 溝の下の土台の厚さ（足と後ろ側をつなぐ部分なので薄くしすぎない）
 base_overlap = 6; // 土台を足の中まで食い込ませる長さ。足と後ろ側を面でつなぐ（外からは見えない）
@@ -74,7 +74,9 @@ module pad_groove_cut(len) {
 module front_foot(toe) {
   // 回した分だけ足の裏の角が前に出るので、その分短くして足の長さを foot_len にそろえる
   len = foot_len - foot_size / 2 * sin(abs(toe));
-  translate([width / 2, -half, 0])
+  // 傾きは後ろの三角と同じく土台の上（z = base_t）を基準にする。地面を基準にすると、
+  // 溝が base_t * sin(tilt)（約 0.7mm）だけ slot_w より狭くなる
+  translate([width / 2, -half - base_t * tan(tilt), 0])
     multmatrix([[1, 0, 0, 0], [0, 1, tan(tilt), 0], [0, 0, 1, 0], [0, 0, 0, 1]])
       intersection() {
         rotate([0, 0, toe])
