@@ -22,11 +22,11 @@ Pi 上の配置: `~/hand-landmarker/`（`pi_peace.py`、`pi_eyes.py`、`.venv/`�
 
 - Raspberry Pi Zero 2 W（Cortex-A53 4コア / RAM 512MB / 2.4GHz Wi-Fi のみ）
 - OS: Raspberry Pi OS Lite **64bit**（Debian 13 trixie）。デスクトップなし、`multi-user.target`
-- 画面: HDMI のコンソール。`/dev/fb0` は 1024×600 / 16bit（RGB565）。`kanta` は video グループなので sudo なしで書ける
+- 画面: HDMI のコンソール。`/dev/fb0` は 1024×600 / 16bit（RGB565）。`raspi` は video グループなので sudo なしで書ける
 - カメラ: OV5647（640×480 62fps 〜 2592×1944 15fps）
-- 接続先は `console/.env` の `PI_HOST`（作者の環境は `kanta@kanta.local`）。研究室の LAN の SSH は鍵認証だけ（パスワード SSH は `/etc/ssh/sshd_config.d/10-key-only.conf` で禁止）
-- 外からは Tailscale（`kanta@kanta`、共有したメンバーは `kanta.<tailnet>.ts.net`）。Tailscale 経由の SSH は Tailscale SSH で、tailnet のポリシーで `kanta` ユーザーだけ許している。接続 1 本ごとに Pi のメモリを使うので、研究室では `kanta.local` を使う。tailnet の名前やメンバーの ID はコミットしない
-- Pi の sudo はパスワード必須（`/etc/sudoers.d/99-kanta-require-password`）。コンソールが `sudo -n` で使う再起動・電源オフ・`getty@tty1` の再起動・画面クリアだけはパスワードなし（LED の操作も許可リストに残っているが、コンソールからは使っていない）。ここに無い sudo をコンソールに足すときは、この許可リストも更新する
+- 接続先は `console/.env` の `PI_HOST`（作者の環境は `raspi@ddse.local`）。研究室の LAN の SSH は鍵認証だけ（パスワード SSH は `/etc/ssh/sshd_config.d/10-key-only.conf` で禁止）
+- 外からは Tailscale（`raspi@ddse`、共有したメンバーは `ddse.<tailnet>.ts.net`）。Tailscale 経由の SSH は Tailscale SSH で、tailnet のポリシーで `raspi` ユーザーだけ許している。接続 1 本ごとに Pi のメモリを使うので、研究室では `ddse.local` を使う。tailnet の名前やメンバーの ID はコミットしない
+- Pi の sudo はパスワード必須（`/etc/sudoers.d/99-raspi-require-password`）。コンソールが `sudo -n` で使う再起動・電源オフ・`getty@tty1` の再起動・画面クリアだけはパスワードなし（LED の操作も許可リストに残っているが、コンソールからは使っていない）。ここに無い sudo をコンソールに足すときは、この許可リストも更新する
 - Claude は `sudo -n` 以外の sudo を実行できない。必要なときはユーザーに `ssh -t "$PI_HOST" 'sudo ...'` を自分のターミナルで実行してもらう
 - メンバーの SSH の入れ方は [docs/ssh-access.md](docs/ssh-access.md)
 
