@@ -44,24 +44,14 @@
   button:hover { border-color: var(--accent); }
   button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
   button.danger { color: var(--bad); }
-  form { display: flex; gap: 8px; }
-  input[type=text] {
-    flex: 1; min-width: 0; font: 13px ui-monospace, Menlo, monospace; padding: 8px 10px;
-    border: 1px solid var(--line); border-radius: 8px; background: var(--code); color: var(--text);
-  }
-  pre {
-    background: var(--code); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
-    margin: 8px 0 0; max-height: 320px; overflow: auto; font: 12px/1.5 ui-monospace, Menlo, monospace;
-    white-space: pre-wrap; word-break: break-all;
-  }
-  pre .err { color: var(--bad); }
-  pre .meta { color: var(--muted); }
-  .chips { margin-top: 8px; }
-  .chips button { padding: 3px 10px; font-size: 12px; }
-  .camera-controls button { min-width: 150px; padding: 10px 16px; }
-  .preview-options {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 16px;
-    margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line);
+  .mode-controls button { min-width: 150px; padding: 10px 16px; }
+  /* カメラを使わないモード。カメラのボタンと見分けられるよう点線の枠にする */
+  .mode-controls button.no-camera { border-style: dashed; }
+  .mode-controls button.no-camera.active { border-style: solid; }
+  .preview-options { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .preview-options summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  .preview-option-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 16px; margin-top: 12px;
   }
   .preview-option { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; align-items: center; }
   .preview-option label { font-size: 12px; color: var(--muted); }
@@ -116,45 +106,44 @@
   </div>
 
   <section class="card">
-    <h2>カメラ</h2>
-    <div class="row camera-controls">
-      <button data-camera-action="peace">ピースカメラ</button>
-      <button data-camera-action="preview" title="Python を使わず、カメラ映像をそのまま Pi のディスプレイに出す">映像だけ</button>
-      <button data-camera-action="record" title="学習データ用。ピースカメラと同じ映像を Pi の ~/peace-dataset/recordings/ に保存する">録画</button>
-      <button data-camera-action="stop">停止</button>
-      <span class="sub" id="camera-state"></span>
+    <h2>モード</h2>
+    <div class="row mode-controls">
+      <button class="no-camera" data-mode="eyes" title="カメラは使わず、Pi のディスプレイにドットの目を出してまばたきさせる">待機</button>
+      <button class="no-camera" data-mode="stop" title="動いているものを止めて、Pi のディスプレイをログイン画面に戻す">デフォルト</button>
+      <button data-mode="preview" title="Python を使わず、カメラ映像をそのまま Pi のディスプレイに出す">カメラ</button>
+      <button data-mode="peace" title="手を認識して撮影する（raspi/pi_peace.py）。起動に 30 秒ほどかかる">見守り</button>
+      <span class="sub" id="mode-state"></span>
     </div>
-    <div class="preview-options">
-      <div class="preview-option">
-        <label for="preview-ev">露出補正</label><output for="preview-ev">0</output>
-        <input id="preview-ev" data-preview-option="ev" type="range" min="-10" max="10" step="0.5" value="0">
+    <details class="preview-options">
+      <summary>カメラの設定</summary>
+      <div class="preview-option-grid">
+        <div class="preview-option">
+          <label for="preview-ev">露出補正</label><output for="preview-ev">0</output>
+          <input id="preview-ev" data-preview-option="ev" type="range" min="-10" max="10" step="0.5" value="0">
+        </div>
+        <div class="preview-option">
+          <label for="preview-brightness">明るさ</label><output for="preview-brightness">0</output>
+          <input id="preview-brightness" data-preview-option="brightness" type="range" min="-1" max="1" step="0.1" value="0">
+        </div>
+        <div class="preview-option">
+          <label for="preview-contrast">コントラスト</label><output for="preview-contrast">1</output>
+          <input id="preview-contrast" data-preview-option="contrast" type="range" min="0" max="32" step="0.5" value="1">
+        </div>
+        <div class="preview-option">
+          <label for="preview-saturation">彩度</label><output for="preview-saturation">1</output>
+          <input id="preview-saturation" data-preview-option="saturation" type="range" min="0" max="32" step="0.5" value="1">
+        </div>
+        <div class="preview-option">
+          <label for="preview-sharpness">シャープネス</label><output for="preview-sharpness">1</output>
+          <input id="preview-sharpness" data-preview-option="sharpness" type="range" min="0" max="16" step="0.5" value="1">
+        </div>
+        <div class="row preview-option-actions">
+          <button id="apply-preview-options">カメラに適用</button>
+          <button id="reset-preview-options">標準に戻す</button>
+          <span class="sub">適用すると「カメラ」を再起動します</span>
+        </div>
       </div>
-      <div class="preview-option">
-        <label for="preview-brightness">明るさ</label><output for="preview-brightness">0</output>
-        <input id="preview-brightness" data-preview-option="brightness" type="range" min="-1" max="1" step="0.1" value="0">
-      </div>
-      <div class="preview-option">
-        <label for="preview-contrast">コントラスト</label><output for="preview-contrast">1</output>
-        <input id="preview-contrast" data-preview-option="contrast" type="range" min="0" max="32" step="0.5" value="1">
-      </div>
-      <div class="preview-option">
-        <label for="preview-saturation">彩度</label><output for="preview-saturation">1</output>
-        <input id="preview-saturation" data-preview-option="saturation" type="range" min="0" max="32" step="0.5" value="1">
-      </div>
-      <div class="preview-option">
-        <label for="preview-sharpness">シャープネス</label><output for="preview-sharpness">1</output>
-        <input id="preview-sharpness" data-preview-option="sharpness" type="range" min="0" max="16" step="0.5" value="1">
-      </div>
-      <div class="row preview-option-actions">
-        <button id="apply-preview-options">映像だけに適用</button>
-        <button id="reset-preview-options">標準に戻す</button>
-        <span class="sub">適用すると「映像だけ」を再起動します</span>
-      </div>
-    </div>
-    <div class="row" style="margin-top: 8px">
-      <button id="pull-recordings">録画を Mac に取り込む</button>
-      <span class="sub" id="recordings-state"></span>
-    </div>
+    </details>
     <div class="photo" id="photo">
       <img id="photo-image" alt="Piで撮影した最新の写真" hidden>
       <button id="latest-photo">最新の写真を取得</button>
@@ -163,31 +152,12 @@
   </section>
 
   <section class="card">
-    <h2>基板の LED（ACT）</h2>
-    <div class="row" id="led-buttons">
-      <button data-led="on">点灯</button>
-      <button data-led="off">消灯</button>
-      <button data-led="heartbeat">心拍</button>
-      <button data-led="default">元に戻す</button>
-      <span class="sub" id="led-state"></span>
+    <h2>学習データ</h2>
+    <div class="row mode-controls">
+      <button data-mode="record" title="見守りと同じ映像を Pi の ~/peace-dataset/recordings/ に保存する。止めるときは「デフォルト」">録画</button>
+      <button id="pull-recordings">録画を Mac に取り込む</button>
+      <span class="sub" id="recordings-state"></span>
     </div>
-  </section>
-
-  <section class="card">
-    <h2>コマンド実行（Pi 上で1回だけ実行）</h2>
-    <form id="exec-form">
-      <input type="text" id="cmd" placeholder="例: ls -la ~" autocomplete="off" spellcheck="false">
-      <button type="submit">実行</button>
-    </form>
-    <div class="row chips">
-      <button data-cmd="uname -a">uname -a</button>
-      <button data-cmd="ls -la ~">ls -la ~</button>
-      <button data-cmd="ip -brief addr">ip addr</button>
-      <button data-cmd="systemctl list-units --type=service --state=running --no-pager">動いているサービス</button>
-      <button data-cmd="rpicam-hello --list-cameras">カメラ確認</button>
-      <button data-cmd="ps -eo pid,rss,comm --sort=-rss | head -12">メモリ食ってる順</button>
-    </div>
-    <pre id="out"><span class="meta">ここに結果が出ます</span></pre>
   </section>
 
   <section class="card">
@@ -195,7 +165,7 @@
     <div class="row">
       <button class="danger" data-power="reboot">再起動</button>
       <button class="danger" data-power="poweroff">シャットダウン</button>
-      <span class="sub">シャットダウン後は LED が消えてから電源を抜く</span>
+      <span class="sub" id="power-state">シャットダウン後は基板の LED が消えてから電源を抜く</span>
     </div>
   </section>
 </main>
@@ -275,15 +245,10 @@ async function updateStatus() {
   $("disk-sub").textContent = "起動から " + uptimeText(s.uptime_s);
   $("disk-bar").style.width = (100 * s.disk_used / s.disk_total) + "%";
 
-  const ledMode = s.led_trigger === "none" ? (s.led_value ? "on" : "off")
-    : s.led_trigger === "heartbeat" ? "heartbeat" : "default";
-  document.querySelectorAll("[data-led]").forEach((b) =>
-    b.classList.toggle("active", b.dataset.led === ledMode));
-  $("led-state").textContent = `trigger: ${s.led_trigger}`;
-
-  const cameraMode = s.peace ? "peace" : s.preview ? "preview" : s.record ? "record" : "stop";
-  document.querySelectorAll("[data-camera-action]").forEach((button) =>
-    button.classList.toggle("active", button.dataset.cameraAction === cameraMode));
+  const mode = s.peace ? "peace" : s.preview ? "preview" : s.record ? "record"
+    : s.eyes ? "eyes" : "stop";
+  document.querySelectorAll("[data-mode]").forEach((button) =>
+    button.classList.toggle("active", button.dataset.mode === mode));
   if (!pulling) {
     const { count, bytes } = s.recordings;
     $("recordings-state").textContent = `Pi の録画: ${count} 本 / ${(bytes / 1024 ** 2).toFixed(0)} MB`
@@ -299,37 +264,11 @@ async function post(path, body) {
   return res.json();
 }
 
-function show(command, r) {
-  const esc = (t) => t.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
-  $("out").innerHTML =
-    `<span class="meta">$ ${esc(command)}</span>\n` +
-    esc(r.stdout || "") +
-    (r.stderr ? `<span class="err">${esc(r.stderr)}</span>` : "") +
-    `\n<span class="meta">exit ${r.code}` + (r.elapsed != null ? ` · ${r.elapsed}s` : "") + `</span>`;
-}
-
-async function run(command) {
-  $("out").innerHTML = `<span class="meta">$ ${command}\n実行中…</span>`;
-  show(command, await post("/api/exec", { command }));
-}
-
-document.querySelectorAll("[data-led]").forEach((b) =>
-  b.addEventListener("click", async () => { await post("/api/led", { mode: b.dataset.led }); refresh(); }));
-
-document.querySelectorAll("[data-cmd]").forEach((b) =>
-  b.addEventListener("click", () => { $("cmd").value = b.dataset.cmd; run(b.dataset.cmd); }));
-
-$("exec-form").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const command = $("cmd").value.trim();
-  if (command) run(command);
-});
-
 document.querySelectorAll("[data-power]").forEach((b) =>
   b.addEventListener("click", async () => {
     if (!confirm(`本当に${b.textContent}しますか？`)) return;
     const r = await post("/api/power", { action: b.dataset.power });
-    show(b.dataset.power, r);
+    if (r.code !== 0) $("power-state").textContent = "失敗: " + (r.stderr || r.error);
   }));
 
 let photoUrl = null;
@@ -353,15 +292,15 @@ async function loadLatestPhoto() {
   }
 }
 
-document.querySelectorAll("[data-camera-action]").forEach((button) =>
+document.querySelectorAll("[data-mode]").forEach((button) =>
   button.addEventListener("click", async () => {
-    const action = button.dataset.cameraAction;
-    $("camera-state").textContent = action === "stop" ? "停止中…" : "起動中…";
-    const result = await post("/api/camera", {
+    const action = button.dataset.mode;
+    $("mode-state").textContent = action === "stop" ? "停止中…" : "起動中…";
+    const result = await post("/api/mode", {
       action,
       ...(action === "preview" ? { options: previewOptions() } : {}),
     });
-    $("camera-state").textContent = result.code === 0
+    $("mode-state").textContent = result.code === 0
       ? ""
       : "失敗: " + (result.stderr || result.error);
     refresh();
@@ -382,9 +321,9 @@ document.querySelectorAll("[data-preview-option]").forEach((input) => {
 });
 
 $("apply-preview-options").addEventListener("click", async () => {
-  $("camera-state").textContent = "設定を適用中…";
-  const result = await post("/api/camera", { action: "preview", options: previewOptions() });
-  $("camera-state").textContent = result.code === 0 ? "" : "失敗: " + (result.stderr || result.error);
+  $("mode-state").textContent = "設定を適用中…";
+  const result = await post("/api/mode", { action: "preview", options: previewOptions() });
+  $("mode-state").textContent = result.code === 0 ? "" : "失敗: " + (result.stderr || result.error);
   refresh();
 });
 

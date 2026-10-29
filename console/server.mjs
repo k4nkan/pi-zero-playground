@@ -32,22 +32,14 @@ echo "freq=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2>/dev/nu
 awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree):/ {print $1 "=" $2}' /proc/meminfo | tr -d ':'
 echo "disk=$(df -B1 / | awk 'NR==2 {print $2, $3}')"
 echo "cpu=$(head -1 /proc/stat)"
-echo "led=$(grep -o '\[[^]]*\]' /sys/class/leds/ACT/trigger | tr -d '[]')"
-echo "ledval=$(cat /sys/class/leds/ACT/brightness)"
 echo "throttled=$(vcgencmd get_throttled 2>/dev/null | cut -d= -f2)"
 echo "hostname=$(hostname)"
 echo "peace=$([ -f /tmp/pi-panel-peace.pid ] && kill -0 $(cat /tmp/pi-panel-peace.pid) 2>/dev/null && echo 1 || echo 0)"
 echo "preview=$([ -f /tmp/pi-panel-preview.pid ] && kill -0 $(cat /tmp/pi-panel-preview.pid) 2>/dev/null && echo 1 || echo 0)"
 echo "record=$([ -f ~/peace-dataset/record.pid ] && kill -0 $(cat ~/peace-dataset/record.pid) 2>/dev/null && echo 1 || echo 0)"
+echo "eyes=$([ -f /tmp/pi-panel-eyes.pid ] && kill -0 $(cat /tmp/pi-panel-eyes.pid) 2>/dev/null && echo 1 || echo 0)"
 echo "recordings=$(ls ~/peace-dataset/recordings/*.h264 2>/dev/null | wc -l) $(du -sb ~/peace-dataset/recordings 2>/dev/null | cut -f1)"
 `;
-
-const LED_COMMANDS = {
-  on: "echo none | sudo -n tee /sys/class/leds/ACT/trigger >/dev/null && echo 1 | sudo -n tee /sys/class/leds/ACT/brightness",
-  off: "echo none | sudo -n tee /sys/class/leds/ACT/trigger >/dev/null && echo 0 | sudo -n tee /sys/class/leds/ACT/brightness",
-  heartbeat: "echo heartbeat | sudo -n tee /sys/class/leds/ACT/trigger",
-  default: "echo actpwr | sudo -n tee /sys/class/leds/ACT/trigger",
-};
 
 const POWER_COMMANDS = {
   reboot: "sudo -n systemctl reboot",
@@ -76,6 +68,13 @@ const STOP_RECORD = `${running(RECORD_PID)} && { kill -INT $(cat ${RECORD_PID})
 for i in $(seq 20); do ${running(RECORD_PID)} || break; sleep 0.5; done
 sudo -n systemctl restart getty@tty1; }; rm -f ${RECORD_PID}`;
 
+// カメラを使わず、画面にドットの目を出してまばたきさせる（raspi/pi_eyes.py）。
+// fb0 に描くので、カメラのプレビュー（fb0 より上の層）とは同時に見えない。カメラのモードとは片方ずつ動かす
+const EYES_PID = "/tmp/pi-panel-eyes.pid";
+const STOP_EYES = `${running(EYES_PID)} && { kill -- -$(cat ${EYES_PID})
+for i in $(seq 10); do ${running(EYES_PID)} || break; sleep 0.5; done
+sudo -n systemctl restart getty@tty1; }; rm -f ${EYES_PID}`;
+
 const CLEAR_CONSOLE = "sudo -n sh -c 'export TERM=linux; setterm --cursor off > /dev/tty1; clear > /dev/tty1'";
 
 const PREVIEW_OPTION_RANGES = {
@@ -98,11 +97,13 @@ function previewOptions(values = {}) {
   return options.join(" ");
 }
 
-const CAMERA_COMMANDS = {
+// コンソールの「モード」。待機 = eyes、デフォルト = stop、カメラ = preview、見守り = peace。record は学習データ用
+const MODE_COMMANDS = {
   // raspi/pi_peace.py を Pi の ~/hand-landmarker に置いてある前提
   peace: `${running(PEACE_PID)} && { echo already running; exit 0; }
 ${STOP_PREVIEW}
 ${STOP_RECORD}
+${STOP_EYES}
 ${CLEAR_CONSOLE}
 cd ~/hand-landmarker || exit 1
 # "cd && setsid ... &" と書くと、裏で残るサブシェルが SSH の出力を握って返ってこなくなるので分けている
@@ -112,20 +113,31 @@ sleep 3; ${running(PEACE_PID)} && echo "started（読み込みに 30 秒ほど�
   preview: (options) => `${STOP_PREVIEW}
 ${STOP_PEACE}
 ${STOP_RECORD}
+${STOP_EYES}
 ${CLEAR_CONSOLE}
-setsid nohup rpicam-hello -t 0 -f ${options} >/tmp/pi-panel-preview.log 2>&1 </dev/null & echo $! > ${PREVIEW_PID}
+setsid nohup rpicam-hello -t 0 -f --vflip ${options} >/tmp/pi-panel-preview.log 2>&1 </dev/null & echo $! > ${PREVIEW_PID}
 sleep 2; ${running(PREVIEW_PID)} && echo started || { tail -3 /tmp/pi-panel-preview.log >&2; exit 1; }`,
   // pi_peace.py が認識に使うのと同じ映像（640×480 / 15fps / 左右反転、プレビューも同じ位置）を H.264 で保存する
   record: `${running(RECORD_PID)} && { echo already recording; exit 0; }
 ${STOP_PEACE}
 ${STOP_PREVIEW}
+${STOP_EYES}
 ${CLEAR_CONSOLE}
 mkdir -p ${DATASET_DIR}/recordings
 file=${DATASET_DIR}/recordings/rec_$(date +%Y%m%d_%H%M%S).h264
-setsid nohup rpicam-vid -t 0 --width 640 --height 480 --framerate 15 --hflip -p 0,0,800,600 \\
+setsid nohup rpicam-vid -t 0 --width 640 --height 480 --framerate 15 --hflip --vflip -p 0,0,800,600 \\
   --codec h264 --bitrate 4000000 --intra 15 -o "$file" >${DATASET_DIR}/record.log 2>&1 </dev/null & echo $! > ${RECORD_PID}
 sleep 2; ${running(RECORD_PID)} && echo "recording: $(basename "$file")" || { tail -3 ${DATASET_DIR}/record.log >&2; exit 1; }`,
-  stop: `${STOP_PEACE}; ${STOP_PREVIEW}; ${STOP_RECORD}; echo stopped`,
+  // raspi/pi_eyes.py を Pi の ~/hand-landmarker に置いてある前提
+  eyes: `${running(EYES_PID)} && { echo already running; exit 0; }
+${STOP_PEACE}
+${STOP_PREVIEW}
+${STOP_RECORD}
+${CLEAR_CONSOLE}
+cd ~/hand-landmarker || exit 1
+setsid nohup .venv/bin/python -u pi_eyes.py >/tmp/pi-panel-eyes.log 2>&1 </dev/null & echo $! > ${EYES_PID}
+sleep 2; ${running(EYES_PID)} && echo started || { tail -5 /tmp/pi-panel-eyes.log >&2; exit 1; }`,
+  stop: `${STOP_PEACE}; ${STOP_PREVIEW}; ${STOP_RECORD}; ${STOP_EYES}; echo stopped`,
 };
 
 // Pi の録画を Mac のリポジトリ内 dataset/recordings/ に取り込む（コミットはしない）
@@ -198,12 +210,11 @@ async function getStatus() {
     swap_used_kb: Number(raw.SwapTotal) - Number(raw.SwapFree),
     disk_total: diskTotal,
     disk_used: diskUsed,
-    led_trigger: raw.led,
-    led_value: Number(raw.ledval),
     throttled: raw.throttled || null,
     peace: raw.peace === "1",
     preview: raw.preview === "1",
     record: raw.record === "1",
+    eyes: raw.eyes === "1",
     recordings: { count: Number(raw.recordings.split(" ")[0]), bytes: Number(raw.recordings.split(" ")[1] || 0) },
   };
 }
@@ -265,17 +276,15 @@ const server = createServer(async (req, res) => {
   }
 
   let command;
-  if (req.url === "/api/led") command = LED_COMMANDS[body.mode];
-  else if (req.url === "/api/power") command = POWER_COMMANDS[body.action];
-  else if (req.url === "/api/camera") {
-    command = CAMERA_COMMANDS[body.action];
+  if (req.url === "/api/power") command = POWER_COMMANDS[body.action];
+  else if (req.url === "/api/mode") {
+    command = MODE_COMMANDS[body.action];
     if (body.action === "preview") {
       const options = previewOptions(body.options);
       if (options == null) return sendJson(res, { error: "カメラ設定の値が範囲外です" }, 400);
       command = command?.(options);
     }
   }
-  else if (req.url === "/api/exec") command = String(body.command ?? "").trim();
   else return sendJson(res, { error: "not found" }, 404);
   if (!command) return sendJson(res, { error: "bad request" }, 400);
 

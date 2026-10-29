@@ -9,12 +9,13 @@ Raspberry Pi Zero 2 W で両手のピースを認識し、3秒カウントダウ
 | パス | 動く場所 | 中身 |
 | --- | --- | --- |
 | `raspi/pi_peace.py` | Pi | 手の認識・カウントダウン撮影。映像は `rpicam-vid` の GPU プレビュー（画面左 800×600）、状態は右の余白に `/dev/fb0` で描く |
+| `raspi/pi_eyes.py` | Pi | 「待機」モード。カメラは使わず、ドットの目を `/dev/fb0` に描いてまばたきさせる。コマは起動時に作り、まばたきの瞬間だけ書く（実測で CPU 1 コアの約 0.2%、RSS 約 42MB） |
 | `raspi/requirements.txt` | Pi | Pi の venv（Python 3.12）に入れる依存。`mediapipe==0.10.18` 固定 |
 | `console/server.mjs` | Mac | `127.0.0.1` だけで待ち受けるローカルサーバー。ブラウザ → server → SSH → Pi |
-| `console/index.html` | Mac | 操作画面（状態・カメラ・LED・コマンド実行・電源）。カメラは「ピースカメラ」（`pi_peace.py`）と「映像だけ」（`rpicam-hello -t 0 -f`、Python なし）を切り替える |
+| `console/index.html` | Mac | 操作画面（状態・モード・学習データの録画・電源）。モードは「待機」（`pi_eyes.py`）・「デフォルト」（全部止めてログイン画面）・「カメラ」（`rpicam-hello -t 0 -f`、Python なし）・「見守り」（`pi_peace.py`）を切り替える。Pi でのコマンド実行は SSH で直接やる |
 | `dataset/` | Mac | 分類モデル用の学習データ。コンソールの「録画」で Pi に撮り、「録画を Mac に取り込む」で `dataset/recordings/`（コミットしない）に入れる。手順は [dataset/README.md](dataset/README.md) |
 
-Pi 上の配置: `~/hand-landmarker/`（`pi_peace.py`、`.venv/`、`models/hand_landmarker.task`、`photos/`）。
+Pi 上の配置: `~/hand-landmarker/`（`pi_peace.py`、`pi_eyes.py`、`.venv/`、`models/hand_landmarker.task`、`photos/`）。
 録画は本番と分けて `~/peace-dataset/`（`recordings/`、`record.pid`、`record.log`）だけに書く。`rm -rf ~/peace-dataset` で元に戻る。
 
 ## デバイスの前提
@@ -24,7 +25,7 @@ Pi 上の配置: `~/hand-landmarker/`（`pi_peace.py`、`.venv/`、`models/hand_
 - 画面: HDMI のコンソール。`/dev/fb0` は 1024×600 / 16bit（RGB565）。`kanta` は video グループなので sudo なしで書ける
 - カメラ: OV5647（640×480 62fps 〜 2592×1944 15fps）
 - 接続先は `console/.env` の `PI_HOST`（作者の環境は `kanta@kanta.local`）。SSH は鍵認証だけ（パスワード SSH は `/etc/ssh/sshd_config.d/10-key-only.conf` で禁止）
-- Pi の sudo はパスワード必須（`/etc/sudoers.d/99-kanta-require-password`）。コンソールが `sudo -n` で使う LED・再起動・電源オフ・`getty@tty1` の再起動・画面クリアだけはパスワードなし。ここに無い sudo をコンソールに足すときは、この許可リストも更新する
+- Pi の sudo はパスワード必須（`/etc/sudoers.d/99-kanta-require-password`）。コンソールが `sudo -n` で使う再起動・電源オフ・`getty@tty1` の再起動・画面クリアだけはパスワードなし（LED の操作も許可リストに残っているが、コンソールからは使っていない）。ここに無い sudo をコンソールに足すときは、この許可リストも更新する
 - Claude は `sudo -n` 以外の sudo を実行できない。必要なときはユーザーに `ssh -t "$PI_HOST" 'sudo ...'` を自分のターミナルで実行してもらう
 - メンバーの SSH の入れ方は [docs/ssh-access.md](docs/ssh-access.md)
 
@@ -67,7 +68,7 @@ python3 -m py_compile raspi/pi_peace.py
 node --check console/server.mjs
 ```
 
-実機での確認は、コンソールの「ピースカメラ」→ 約 30 秒待つ → Pi の画面を見る。fb0 の中身は `ssh "$PI_HOST" 'head -c 1228800 /dev/fb0'` で RGB565 の生データとして取れる（GPU プレビューの映像は映らない）。認識の回数と時間は `/tmp/pi-panel-peace.log` に 10 秒ごとに出る。
+実機での確認は、コンソールの「見守り」→ 約 30 秒待つ → Pi の画面を見る。fb0 の中身は `ssh "$PI_HOST" 'head -c 1228800 /dev/fb0'` で RGB565 の生データとして取れる（GPU プレビューの映像は映らない）。認識の回数と時間は `/tmp/pi-panel-peace.log` に 10 秒ごとに出る。
 
 ## 規約
 
